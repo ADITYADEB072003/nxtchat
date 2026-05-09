@@ -100,4 +100,20 @@ chat-app/
 | `presence:update` | server→client | `{ roomId, users[] }` |
 | `message:react` | client→server | `{ messageId, emoji, username, roomId }` |
 | `room:new` | server→all | room object |
-# nxtchat
+#nxtchat
+##Admin creation process
+```
+via monogo:-
+db.users.updateOne(
+  { username: "your-username" },
+  { $set: { role: "admin" } }
+)
+POST http://localhost:3000/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "email": "admin@example.com",
+  "password": "yourpassword"
+}
+```

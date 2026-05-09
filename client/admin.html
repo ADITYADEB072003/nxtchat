@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>NexChat Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--surface:#161920;--surface2:#1e2230;--border:#272b38;
+  --accent:#7c6af7;--accent2:#4ecdc4;--danger:#ff6b6b;--green:#4ade80;
+  --amber:#f7dc6f;--text:#e8eaf0;--muted:#6b7280;--radius:12px;
+  --sans:'DM Sans',sans-serif;--mono:'Space Mono',monospace;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);display:flex}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* sidebar */
+.sidebar{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:24px 12px}
+.logo{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--accent);margin-bottom:4px;padding:0 8px}
+.logo-sub{font-size:11px;color:var(--muted);padding:0 8px;margin-bottom:24px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:500;color:var(--muted);margin-bottom:2px;transition:all .15s;border:none;background:transparent;width:100%;text-align:left}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:rgba(124,106,247,.15);color:var(--accent)}
+.nav-item .icon{font-size:16px;width:20px;text-align:center}
+.sidebar-footer{margin-top:auto;padding:0 8px}
+.admin-badge{background:rgba(124,106,247,.15);border:1px solid rgba(124,106,247,.3);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--accent);font-family:var(--mono)}
+
+/* main */
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.topbar{height:60px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 28px;gap:16px;flex-shrink:0}
+.topbar h1{font-size:18px;font-weight:700}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.admin-name{font-size:13px;color:var(--muted)}
+.logout-btn{padding:7px 14px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s}
+.logout-btn:hover{border-color:var(--danger);color:var(--danger)}
+
+.content{flex:1;overflow-y:auto;padding:28px}
+.page{display:none}.page.active{display:block}
+
+/* stats grid */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;margin-bottom:28px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;cursor:default}
+.stat-icon{font-size:24px;margin-bottom:8px}
+.stat-val{font-family:var(--mono);font-size:32px;font-weight:700;color:var(--accent);line-height:1}
+.stat-label{font-size:12px;color:var(--muted);margin-top:4px;font-weight:500}
+
+/* tables */
+.section-title{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px}
+table{width:100%;border-collapse:collapse}
+th{background:var(--surface2);padding:12px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+td{padding:12px 16px;border-top:1px solid var(--border);font-size:14px;vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.02)}
+
+/* badges */
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-admin{background:rgba(124,106,247,.15);color:var(--accent)}
+.badge-user{background:rgba(107,114,128,.1);color:var(--muted)}
+.badge-banned{background:rgba(255,107,107,.12);color:var(--danger)}
+.badge-online{background:rgba(74,222,128,.12);color:var(--green)}
+
+/* buttons */
+.btn{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn:hover{background:var(--surface2);color:var(--text)}
+.btn-danger{border-color:rgba(255,107,107,.3);color:var(--danger)}
+.btn-danger:hover{background:rgba(255,107,107,.1)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{opacity:.85}
+.btn-green{border-color:rgba(74,222,128,.3);color:var(--green)}
+.btn-green:hover{background:rgba(74,222,128,.1)}
+.btn-amber{border-color:rgba(247,220,111,.3);color:var(--amber)}
+.btn-amber:hover{background:rgba(247,220,111,.1)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.actions{display:flex;gap:6px}
+
+/* broadcast */
+.broadcast-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:24px}
+.broadcast-box h3{font-size:14px;font-weight:700;margin-bottom:12px}
+.broadcast-input-row{display:flex;gap:10px}
+.broadcast-input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:var(--sans);font-size:14px;outline:none}
+.broadcast-input:focus{border-color:var(--accent)}
+
+/* search */
+.search-bar{display:flex;gap:10px;margin-bottom:16px}
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--text);font-size:14px;outline:none;width:280px}
+.search-input:focus{border-color:var(--accent)}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;width:400px}
+.modal h2{font-size:18px;font-weight:700;margin-bottom:20px}
+.modal input,.modal textarea{width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:14px;outline:none;margin-bottom:14px}
+.modal input:focus,.modal textarea:focus{border-color:var(--accent)}
+.modal-actions{display:flex;gap:10px}
+.modal-actions button{flex:1}
+
+/* activity log */
+.log-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto}
+.log-item{background:var(--surface2);border-radius:8px;padding:10px 14px;font-size:13px;display:flex;gap:10px;align-items:flex-start}
+.log-time{color:var(--muted);font-size:11px;font-family:var(--mono);white-space:nowrap;margin-top:1px}
+.log-text{flex:1}
+
+/* toast */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:14px;z-index:100;transition:all .25s;opacity:0;transform:translateY(8px)}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.success{border-color:rgba(74,222,128,.4);color:var(--green)}
+.toast.error{border-color:rgba(255,107,107,.4);color:var(--danger)}
+
+/* login overlay */
+#auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;width:360px}
+.auth-logo{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--accent);margin-bottom:4px}
+.auth-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}
+.field input{width:100%;padding:13px 15px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;outline:none}
+.field input:focus{border-color:var(--accent)}
+.btn-full{width:100%;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-size:15px;font-weight:600;cursor:pointer;margin-top:4px}
+.auth-error{background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--danger);margin-bottom:14px;display:none}
+
+/* rooms list in admin */
+.room-row td .room-name{font-weight:600}
+.room-row td .room-desc{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<!-- Auth -->
+<div id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-logo">NexChat_ Admin</div>
+    <div class="auth-sub">Sign in with your admin account</div>
+    <div class="auth-error" id="auth-err"></div>
+    <div class="field"><label>Username</label><input id="a-user" type="text" placeholder="admin_username"/></div>
+    <div class="field"><label>Password</label><input id="a-pass" type="password" placeholder="••••••••"/></div>
+    <button class="btn-full" onclick="adminLogin()">Access Admin Panel →</button>
+  </div>
+</div>
+
+<!-- App -->
+<div class="sidebar">
+  <div class="logo">NexChat_</div>
+  <div class="logo-sub">Admin Panel</div>
+  <button class="nav-item active" onclick="nav('dashboard')" id="nav-dashboard"><span class="icon">📊</span>Dashboard</button>
+  <button class="nav-item" onclick="nav('users')"     id="nav-users"><span class="icon">👥</span>Users</button>
+  <button class="nav-item" onclick="nav('rooms')"     id="nav-rooms"><span class="icon">#</span>Channels</button>
+  <button class="nav-item" onclick="nav('messages')"  id="nav-messages"><span class="icon">💬</span>Messages</button>
+  <button class="nav-item" onclick="nav('media')"     id="nav-media"><span class="icon">🖼</span>Media</button>
+  <button class="nav-item" onclick="nav('broadcast')" id="nav-broadcast"><span class="icon">📢</span>Broadcast</button>
+  <button class="nav-item" onclick="nav('cache')"     id="nav-cache"><span class="icon">⚡</span>Cache</button>
+  <div class="sidebar-footer">
+    <div class="admin-badge" id="admin-badge">Admin: —</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <h1 id="page-title">Dashboard</h1>
+    <div class="topbar-right">
+      <span class="admin-name" id="admin-name-top"></span>
+      <button class="logout-btn" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="section-title">🟢 Online Now</div>
+      <div class="card"><table><thead><tr><th>User</th><th>Room</th></tr></thead><tbody id="online-tbody"></tbody></table></div>
+      <div class="section-title">📋 Recent Activity</div>
+      <div class="card" style="padding:16px"><div class="log-list" id="log-list"></div></div>
+    </div>
+
+    <!-- USERS -->
+    <div class="page" id="page-users">
+      <div class="search-bar">
+        <input class="search-input" id="user-search" placeholder="Search users…" oninput="filterUsers()"/>
+        <button class="btn btn-primary" onclick="loadUsers()">↻ Refresh</button>
+      </div>
+      <div class="card"><table>
+        <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
+        <tbody id="users-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ROOMS -->
+    <div class="page" id="page-rooms">
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <button class="btn btn-primary" onclick="loadRooms()">↻ Refresh</button>
+      </div>
+      <div class="card"><table>
+        <thead><tr><th>Channel</th><th>Created By</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody id="rooms-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- MESSAGES -->
+    <div class="page" id="page-messages">
+      <div class="search-bar">
+        <select id="msg-room-filter" class="search-input" style="width:200px" onchange="loadMessages()">
+          <option value="">All channels</option>
+        </select>
+        <button class="btn btn-primary" onclick="loadMessages()">↻ Refresh</button>
+      </div>
+      <div class="card"><table>
+        <thead><tr><th>Sender</th><th>Channel</th><th>Message</th><th>Type</th><th>Time</th><th>Actions</th></tr></thead>
+        <tbody id="messages-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- MEDIA -->
+    <div class="page" id="page-media">
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <button class="btn btn-primary" onclick="loadMedia()">↻ Refresh</button>
+      </div>
+      <div id="media-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px"></div>
+    </div>
+
+    <!-- BROADCAST -->
+    <div class="page" id="page-broadcast">
+      <div class="broadcast-box">
+        <h3>📢 Send System Broadcast</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Sends a system message to ALL connected users across all channels.</p>
+        <div class="broadcast-input-row">
+          <input class="broadcast-input" id="broadcast-text" placeholder="Type your broadcast message…"/>
+          <button class="btn btn-primary" onclick="sendBroadcast()">Send</button>
+        </div>
+      </div>
+      <div class="section-title">📜 Broadcast History</div>
+      <div class="card" style="padding:16px"><div class="log-list" id="broadcast-log"></div></div>
+    </div>
+
+    <!-- CACHE -->
+    <div class="page" id="page-cache">
+      <div style="display:flex;gap:10px;margin-bottom:20px">
+        <button class="btn btn-primary" onclick="loadCacheStats()">↻ Refresh</button>
+      </div>
+      <div class="stats-grid" id="cache-stats-grid"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Ban modal -->
+<div class="modal-bg" id="ban-modal">
+  <div class="modal">
+    <h2>🚫 Ban User</h2>
+    <input type="text" id="ban-reason" placeholder="Reason (optional)"/>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBanModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmBan()">Ban User</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+let token = localStorage.getItem('nexchat_token');
+let adminUser = null;
+let allUsers = [];
+let allRooms = [];
+let broadcastHistory = [];
+let activityLog = [];
+let socket;
+let banTarget = null;
+
+// ── Auth ──────────────────────────────────────────────────────────
+async function adminLogin() {
+  const username = document.getElementById('a-user').value.trim();
+  const password = document.getElementById('a-pass').value;
+  const err = document.getElementById('auth-err');
+  err.style.display = 'none';
+  try {
+    const r = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password}) });
+    const data = await r.json();
+    if (!r.ok) { err.textContent=data.error; err.style.display='block'; return; }
+    if (data.user.role !== 'admin') { err.textContent='Access denied: not an admin account'; err.style.display='block'; return; }
+    token = data.token; adminUser = data.user;
+    localStorage.setItem('nexchat_token', token);
+    bootAdmin();
+  } catch { err.textContent='Network error'; err.style.display='block'; }
+}
+document.getElementById('a-pass').addEventListener('keydown', e => e.key==='Enter' && adminLogin());
+
+async function checkAuth() {
+  if (!token) return;
+  try {
+    const r = await fetch('/api/auth/me', { headers:{Authorization:'Bearer '+token} });
+    if (!r.ok) { token=null; localStorage.removeItem('nexchat_token'); return; }
+    const { user } = await r.json();
+    if (user.role !== 'admin') { token=null; return; }
+    adminUser = user;
+    bootAdmin();
+  } catch {}
+}
+
+function bootAdmin() {
+  document.getElementById('auth-overlay').style.display = 'none';
+  document.getElementById('admin-badge').textContent = 'Admin: ' + adminUser.username;
+  document.getElementById('admin-name-top').textContent = adminUser.username;
+  initSocket();
+  loadDashboard();
+  setInterval(loadDashboard, 15000);
+}
+
+function doLogout() {
+  localStorage.removeItem('nexchat_token');
+  location.reload();
+}
+
+// ── Socket ────────────────────────────────────────────────────────
+function initSocket() {
+  socket = io({ auth:{ token } });
+  socket.on('message:new', msg => {
+    if (msg.type !== 'system') addLog(`💬 ${msg.sender}: ${(msg.text||'[media]').slice(0,40)}`);
+  });
+  socket.on('system:broadcast', ({ text, from }) => {
+    addBroadcastLog(`${from}: ${text}`);
+  });
+  socket.on('room:new', room => { addLog(`# New channel created: ${room.name}`); allRooms.push(room); });
+  socket.on('room:deleted', ({ roomId }) => { addLog(`🗑 Channel deleted`); });
+}
+
+// ── Nav ───────────────────────────────────────────────────────────
+const pageTitles = { dashboard:'Dashboard', users:'Users', rooms:'Channels', messages:'Messages', media:'Media', broadcast:'Broadcast', cache:'Cache Stats' };
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.getElementById('nav-'+page).classList.add('active');
+  document.getElementById('page-title').textContent = pageTitles[page];
+  if (page==='users')     loadUsers();
+  if (page==='rooms')     loadRooms();
+  if (page==='messages')  loadMessages();
+  if (page==='media')     loadMedia();
+  if (page==='cache')     loadCacheStats();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = `toast show ${type}`;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── API helper ────────────────────────────────────────────────────
+async function api(url, opts={}) {
+  const r = await fetch(url, { ...opts, headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+token, ...(opts.headers||{}) } });
+  if (r.status === 401) { doLogout(); return null; }
+  return r;
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────
+async function loadDashboard() {
+  const r = await api('/api/admin/stats');
+  if (!r?.ok) return;
+  const s = await r.json();
+  const icons = { users:'👥', rooms:'#', messages:'💬', media:'🖼', online:'🟢', banned:'🚫' };
+  const labels = { users:'Total Users', rooms:'Channels', messages:'Messages', media:'Media Files', online:'Online Now', banned:'Banned Users' };
+  document.getElementById('stats-grid').innerHTML = Object.entries(s).map(([k,v]) =>
+    `<div class="stat-card"><div class="stat-icon">${icons[k]||'📊'}</div><div class="stat-val">${v}</div><div class="stat-label">${labels[k]||k}</div></div>`
+  ).join('');
+
+  // Online users
+  const onlineHtml = [];
+  for (const [key, entry] of Object.entries({})) {} // placeholder
+  const pr = await api('/api/cache/stats');
+  if (pr?.ok) {
+    const cs = await pr.json();
+    document.getElementById('online-tbody').innerHTML = `<tr><td colspan="2" style="color:var(--muted);font-size:13px">${cs.presenceCache.size} user(s) tracked in presence cache</td></tr>`;
+  }
+}
+
+function addLog(text) {
+  activityLog.unshift({ text, time: new Date().toLocaleTimeString() });
+  if (activityLog.length > 50) activityLog.pop();
+  renderLog();
+}
+function renderLog() {
+  document.getElementById('log-list').innerHTML = activityLog.map(l =>
+    `<div class="log-item"><div class="log-time">${l.time}</div><div class="log-text">${l.text}</div></div>`
+  ).join('') || '<div style="color:var(--muted);font-size:13px">No activity yet</div>';
+}
+
+// ── Users ─────────────────────────────────────────────────────────
+async function loadUsers() {
+  const r = await api('/api/admin/users');
+  if (!r?.ok) return;
+  const { users } = await r.json();
+  allUsers = users;
+  renderUsers(users);
+}
+
+function renderUsers(users) {
+  document.getElementById('users-tbody').innerHTML = users.map(u => `
+    <tr>
+      <td><div style="display:flex;align-items:center;gap:10px">
+        <div style="width:32px;height:32px;border-radius:50%;background:${u.avatar||'#7c6af7'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000">${(u.username||'?').slice(0,2).toUpperCase()}</div>
+        <div><div style="font-weight:600">${u.username}</div>${u.role==='admin'?'<div style="font-size:11px;color:var(--accent)">Administrator</div>':''}</div>
+      </div></td>
+      <td style="color:var(--muted);font-size:13px">${u.email}</td>
+      <td><span class="badge badge-${u.role}">${u.role}</span></td>
+      <td>${u.banned ? '<span class="badge badge-banned">Banned</span>' : '<span class="badge badge-online">Active</span>'}</td>
+      <td style="font-size:12px;color:var(--muted)">${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+      <td><div class="actions">
+        ${u.banned
+          ? `<button class="btn btn-sm btn-green" onclick="toggleBan('${u.username}',false)">Unban</button>`
+          : `<button class="btn btn-sm btn-danger" onclick="openBanModal('${u.username}')">Ban</button>`}
+        <button class="btn btn-sm btn-amber" onclick="toggleRole('${u.username}','${u.role==='admin'?'user':'admin'}')">${u.role==='admin'?'Demote':'Promote'}</button>
+        <button class="btn btn-sm btn-danger" onclick="kickUser('${u.username}')">Kick</button>
+        <button class="btn btn-sm" onclick="deleteUser('${u.username}')">Delete</button>
+      </div></td>
+    </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">No users found</td></tr>';
+}
+
+function filterUsers() {
+  const q = document.getElementById('user-search').value.toLowerCase();
+  renderUsers(allUsers.filter(u => u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
+}
+
+function openBanModal(username) { banTarget = username; document.getElementById('ban-modal').classList.add('open'); document.getElementById('ban-reason').value=''; document.getElementById('ban-reason').focus(); }
+function closeBanModal() { document.getElementById('ban-modal').classList.remove('open'); banTarget = null; }
+
+async function confirmBan() {
+  const reason = document.getElementById('ban-reason').value.trim();
+  await toggleBan(banTarget, true, reason);
+  closeBanModal();
+}
+
+async function toggleBan(username, banned, reason='') {
+  const r = await api(`/api/admin/users/${username}/ban`, { method:'PATCH', body:JSON.stringify({ banned, reason }) });
+  if (r?.ok) { toast(banned ? `${username} banned` : `${username} unbanned`); addLog(`${banned?'🚫 Banned':'✅ Unbanned'}: ${username}`); loadUsers(); }
+  else toast('Failed', 'error');
+}
+
+async function toggleRole(username, role) {
+  if (!confirm(`${role==='admin'?'Promote':'Demote'} ${username}?`)) return;
+  const r = await api(`/api/admin/users/${username}/role`, { method:'PATCH', body:JSON.stringify({ role }) });
+  if (r?.ok) { toast(`${username} is now ${role}`); addLog(`⬆ Role changed: ${username} → ${role}`); loadUsers(); }
+  else toast('Failed', 'error');
+}
+
+function kickUser(username) {
+  socket.emit('admin:kick', { targetUsername: username });
+  toast(`${username} kicked`);
+  addLog(`👢 Kicked: ${username}`);
+}
+
+async function deleteUser(username) {
+  if (!confirm(`Delete user ${username}? This cannot be undone.`)) return;
+  const r = await api(`/api/admin/users/${username}`, { method:'DELETE' });
+  if (r?.ok) { toast(`${username} deleted`); addLog(`🗑 Deleted user: ${username}`); loadUsers(); }
+  else toast('Failed','error');
+}
+
+// ── Rooms ─────────────────────────────────────────────────────────
+async function loadRooms() {
+  const r = await api('/api/admin/rooms');
+  if (!r?.ok) return;
+  const { rooms } = await r.json();
+  allRooms = rooms;
+  document.getElementById('rooms-tbody').innerHTML = rooms.map(room => `
+    <tr class="room-row">
+      <td><div class="room-name">#${room.name}</div><div class="room-desc">${room.description||''}</div></td>
+      <td style="color:var(--muted)">${room.createdBy}</td>
+      <td style="font-size:12px;color:var(--muted)">${room.createdAt?new Date(room.createdAt).toLocaleDateString():'—'}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteRoom('${room._id}','${room.name}')">Delete</button></td>
+    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">No channels</td></tr>';
+
+  // populate message filter
+  const sel = document.getElementById('msg-room-filter');
+  sel.innerHTML = '<option value="">All channels</option>' + rooms.map(r => `<option value="${r._id}">${r.name}</option>`).join('');
+}
+
+async function deleteRoom(id, name) {
+  if (!confirm(`Delete channel #${name} and all its messages?`)) return;
+  const r = await api(`/api/rooms/${id}`, { method:'DELETE' });
+  if (r?.ok) { toast(`#${name} deleted`); addLog(`🗑 Deleted channel: #${name}`); loadRooms(); }
+  else { const d=await r.json(); toast(d.error||'Failed','error'); }
+}
+
+// ── Messages ──────────────────────────────────────────────────────
+async function loadMessages() {
+  const roomId = document.getElementById('msg-room-filter').value;
+  const rooms  = roomId ? [{ _id:roomId }] : allRooms;
+  if (!rooms.length) { await loadRooms(); return loadMessages(); }
+  let all = [];
+  for (const room of rooms.slice(0,10)) {
+    const r = await api(`/api/rooms/${room._id}/messages?limit=30`);
+    if (r?.ok) { const { messages } = await r.json(); all.push(...messages.map(m=>({ ...m, roomName:room.name||roomId }))); }
+  }
+  all.sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt));
+  document.getElementById('messages-tbody').innerHTML = all.map(m => `
+    <tr>
+      <td style="font-weight:600">${m.sender}</td>
+      <td style="color:var(--muted);font-size:13px">#${m.roomName||'?'}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.text||'[media]'}</td>
+      <td><span class="badge badge-${m.type==='text'?'user':'admin'}">${m.type}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${new Date(m.createdAt).toLocaleString()}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteMessage('${m._id}')">Delete</button></td>
+    </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">No messages</td></tr>';
+}
+
+async function deleteMessage(id) {
+  const r = await api(`/api/messages/${id}`, { method:'DELETE' });
+  if (r?.ok) { toast('Message deleted'); addLog(`🗑 Deleted message`); loadMessages(); }
+  else toast('Failed','error');
+}
+
+// ── Media ─────────────────────────────────────────────────────────
+async function loadMedia() {
+  document.getElementById('media-grid').innerHTML = '<div style="color:var(--muted);font-size:14px;padding:20px">Media files are stored in /uploads/. Browse the files on your server, or view shared media in the chat.</div>';
+}
+
+// ── Broadcast ─────────────────────────────────────────────────────
+async function sendBroadcast() {
+  const message = document.getElementById('broadcast-text').value.trim();
+  if (!message) return;
+  const r = await api('/api/admin/broadcast', { method:'POST', body:JSON.stringify({ message }) });
+  if (r?.ok) {
+    toast('Broadcast sent');
+    document.getElementById('broadcast-text').value = '';
+    addBroadcastLog(`You: ${message}`);
+  } else toast('Failed','error');
+}
+document.getElementById('broadcast-text').addEventListener('keydown', e => e.key==='Enter' && sendBroadcast());
+
+function addBroadcastLog(text) {
+  broadcastHistory.unshift({ text, time:new Date().toLocaleTimeString() });
+  if (broadcastHistory.length>20) broadcastHistory.pop();
+  document.getElementById('broadcast-log').innerHTML = broadcastHistory.map(l =>
+    `<div class="log-item"><div class="log-time">${l.time}</div><div class="log-text">${l.text}</div></div>`
+  ).join('') || '<div style="color:var(--muted)">No broadcasts sent yet</div>';
+}
+
+// ── Cache ─────────────────────────────────────────────────────────
+async function loadCacheStats() {
+  const r = await api('/api/cache/stats');
+  if (!r?.ok) return;
+  const s = await r.json();
+  document.getElementById('cache-stats-grid').innerHTML = Object.entries(s).map(([name, stat]) => `
+    <div class="card" style="padding:20px;grid-column:span 1">
+      <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:14px;text-transform:uppercase;letter-spacing:.08em">${name}</div>
+      ${Object.entries(stat).map(([k,v]) => `
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:12px;color:var(--muted)">${k}</span>
+          <span style="font-size:13px;font-family:var(--mono);font-weight:600;color:var(--text)">${v}</span>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+checkAuth();
+</script>
+</body>
+</html>

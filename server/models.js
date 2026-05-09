@@ -10,12 +10,29 @@ const roomSchema = new mongoose.Schema({
   isPrivate:   { type: Boolean, default: false },
 }, { timestamps: true });
 
-// ── Message ──────────────────────────────────────────────────────────────────
+// ── Media ─────────────────────────────────────────────────────────────────────
+const mediaSchema = new mongoose.Schema({
+  filename:     { type: String, required: true },
+  originalName: { type: String, required: true },
+  mimeType:     { type: String, required: true },
+  size:         { type: Number, required: true },
+  type:         { type: String, enum: ['image','video'], required: true },
+  thumbnail:    { type: String, default: null },
+  uploadedBy:   { type: String, required: true },
+  roomId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Room', required: true },
+}, { timestamps: true });
+
+// ── Message ───────────────────────────────────────────────────────────────────
 const messageSchema = new mongoose.Schema({
   roomId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Room', required: true, index: true },
   sender:    { type: String, required: true },
-  text:      { type: String, required: true },
-  type:      { type: String, enum: ['text', 'system'], default: 'text' },
+  text:      { type: String, default: '' },
+  type:      { type: String, enum: ['text','system','image','video'], default: 'text' },
+  mediaId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Media', default: null },
+  mediaUrl:  { type: String, default: null },
+  thumbUrl:  { type: String, default: null },
+  fileName:  { type: String, default: null },
+  fileSize:  { type: Number, default: null },
   edited:    { type: Boolean, default: false },
   reactions: { type: Map, of: [String], default: {} },
 }, { timestamps: true });
@@ -29,6 +46,9 @@ const userSchema = new mongoose.Schema({
   passwordHash:      { type: String, required: true },
   avatar:            { type: String, default: '' },
   bio:               { type: String, default: '' },
+  role:              { type: String, enum: ['user','admin'], default: 'user' },
+  banned:            { type: Boolean, default: false },
+  bannedReason:      { type: String, default: '' },
   lastSeen:          { type: Date, default: Date.now },
   resetOtp:          { type: String, default: null },
   resetOtpExpiresAt: { type: Date,   default: null },
@@ -40,17 +60,12 @@ userSchema.pre('save', async function (next) {
   this.passwordHash = await bcrypt.hash(this.passwordHash, 12);
   next();
 });
-
-userSchema.methods.verifyPassword = function (plain) {
-  return bcrypt.compare(plain, this.passwordHash);
-};
-
+userSchema.methods.verifyPassword = function (plain) { return bcrypt.compare(plain, this.passwordHash); };
 userSchema.methods.setResetOtp = async function (otp) {
-  this.resetOtp          = await bcrypt.hash(otp, 10);
-  this.resetOtpExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  this.resetOtp = await bcrypt.hash(otp, 10);
+  this.resetOtpExpiresAt = new Date(Date.now() + 15*60*1000);
   this.resetOtpAttempts  = 0;
 };
-
 userSchema.methods.verifyResetOtp = async function (otp) {
   if (!this.resetOtp || !this.resetOtpExpiresAt) return false;
   if (new Date() > this.resetOtpExpiresAt)        return false;
@@ -60,15 +75,13 @@ userSchema.methods.verifyResetOtp = async function (otp) {
   if (!ok) { await this.save(); return false; }
   return true;
 };
-
 userSchema.methods.clearResetOtp = function () {
-  this.resetOtp = null;
-  this.resetOtpExpiresAt = null;
-  this.resetOtpAttempts  = 0;
+  this.resetOtp = null; this.resetOtpExpiresAt = null; this.resetOtpAttempts = 0;
 };
 
 const Room    = mongoose.model('Room',    roomSchema);
+const Media   = mongoose.model('Media',   mediaSchema);
 const Message = mongoose.model('Message', messageSchema);
 const User    = mongoose.model('User',    userSchema);
 
-module.exports = { Room, Message, User };
+module.exports = { Room, Media, Message, User };
