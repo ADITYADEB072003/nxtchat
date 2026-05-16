@@ -2,13 +2,35 @@ const mongoose = require('mongoose');
 const bcrypt   = require('bcryptjs');
 
 // ── Room ─────────────────────────────────────────────────────────────────────
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
 const roomSchema = new mongoose.Schema({
   name:        { type: String, required: true, unique: true, trim: true },
   description: { type: String, default: '' },
   createdBy:   { type: String, required: true },
   members:     [String],
   isPrivate:   { type: Boolean, default: false },
+  inviteCode:  { type: String, unique: true, sparse: true, default: null },
+  inviteEnabled: { type: Boolean, default: false },
+  inviteUsedBy:  [String],
 }, { timestamps: true });
+
+// Generate a fresh unique invite code
+roomSchema.methods.generateInviteCode = function() {
+  this.inviteCode    = genCode();
+  this.inviteEnabled = true;
+  return this.inviteCode;
+};
+
+roomSchema.methods.disableInvite = function() {
+  this.inviteCode    = null;
+  this.inviteEnabled = false;
+};
 
 // ── Media ─────────────────────────────────────────────────────────────────────
 const mediaSchema = new mongoose.Schema({

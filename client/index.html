@@ -264,6 +264,40 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); disp
 .media-close{position:fixed;top:20px;right:24px;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:24px;cursor:pointer;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center}
 .admin-link{display:flex;align-items:center;gap:6px;padding:8px 12px;margin:4px 8px;background:rgba(124,106,247,.08);border:1px solid rgba(124,106,247,.2);border-radius:8px;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none}
 .admin-link:hover{background:rgba(124,106,247,.15)}
+.exit-room-btn{width:36px;height:36px;border-radius:8px;border:1px solid rgba(255,107,107,.25);background:transparent;color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s;-webkit-tap-highlight-color:transparent;flex-shrink:0}
+.exit-room-btn:hover{background:rgba(255,107,107,.1);border-color:var(--danger)}
+.exit-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:none;align-items:center;justify-content:center;padding:24px}
+.exit-confirm-overlay.open{display:flex}
+.exit-confirm-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px 24px;width:100%;max-width:360px;text-align:center}
+.exit-confirm-icon{font-size:40px;margin-bottom:12px}
+.exit-confirm-title{font-size:17px;font-weight:700;margin-bottom:8px}
+.exit-confirm-sub{font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.6}
+.exit-confirm-actions{display:flex;gap:10px}
+.exit-confirm-actions button{flex:1;padding:12px;border-radius:var(--radius);font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
+.exit-cancel-btn{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.exit-cancel-btn:hover{background:var(--surface2)}
+.exit-go-btn{background:var(--danger);border:none;color:#fff}
+.exit-go-btn:hover{opacity:.88}
+
+/* ── Invite code UI ── */
+.invite-code-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.invite-code-val{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);letter-spacing:4px;flex:1;text-align:center}
+.invite-copy-btn{background:transparent;border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.invite-copy-btn:hover{border-color:var(--accent);color:var(--accent)}
+.invite-preview{background:rgba(124,106,247,.08);border:1px solid rgba(124,106,247,.2);border-radius:8px;padding:12px 14px;margin-bottom:14px;display:none}
+.invite-preview.show{display:block}
+.invite-preview-name{font-size:15px;font-weight:700;margin-bottom:2px}
+.invite-preview-desc{font-size:12px;color:var(--muted)}
+.invite-preview-members{font-size:11px;color:var(--accent);margin-top:6px}
+.otp-input{text-align:center;font-family:var(--mono);font-size:22px;letter-spacing:6px}
+.room-actions{display:flex;gap:6px;margin-left:auto}
+.room-invite-btn{background:transparent;border:none;font-size:13px;cursor:pointer;padding:2px 6px;border-radius:4px;color:var(--muted);transition:color .15s;display:none}
+.room-invite-btn:hover{color:var(--accent)}
+.room-item:hover .room-invite-btn,.room-item.active .room-invite-btn{display:block}
+.join-btn-big{width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-family:var(--sans);font-size:15px;font-weight:600;cursor:pointer;transition:opacity .2s;margin-top:4px}
+.join-btn-big:hover{opacity:.88}
+.join-btn-big:disabled{opacity:.5;cursor:not-allowed}
+
 
 
 /* ── Right Panel ── */
@@ -473,6 +507,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); disp
     <div class="section-label">Channels</div>
     <div class="rooms-list" id="rooms-list"></div>
     <button class="new-room-btn" onclick="openNewRoom()">+ New channel</button>
+    <button class="new-room-btn" onclick="openJoinCode()" style="margin-top:0">🔑 Join with code</button>
     <div class="sidebar-footer">
       <div>Cache layer active</div>
       <div class="cache-bar">
@@ -494,6 +529,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); disp
       <div class="header-actions">
         <span id="data-source-badge" class="source-badge source-db"></span>
         <button class="icon-btn" title="Refresh" onclick="refreshMessages()">↻</button>
+        <button class="exit-room-btn" id="exit-room-btn" title="Leave channel" onclick="promptExitRoom()" style="display:none">🚪</button>
         <button class="icon-btn panel-toggle-btn" title="Online users" onclick="togglePanel()">👥</button>
       </div>
     </div>
@@ -872,8 +908,14 @@ function renderRooms() {
   rooms.forEach(room => {
     const d = document.createElement('div');
     d.className = 'room-item' + (sameRoom(room._id) ? ' active' : '');
-    d.innerHTML = `<span class="hash">#</span><span class="room-name">${room.name}</span>`;
-    d.onclick = () => { enterRoom(room); closeSidebar(); };
+    const isOwner = currentUser && (room.createdBy === currentUser.username || currentUser.role === 'admin');
+    d.innerHTML = `
+      <span class="hash">#</span>
+      <span class="room-name">${room.name}</span>
+      ${isOwner ? `<button class="room-invite-btn" title="Get invite code" onclick="event.stopPropagation();openInviteModal('${room._id}','${room.name}')">🔗</button>` : ''}
+    `;
+    d.querySelector('.room-name').onclick = () => { enterRoom(room); closeSidebar(); };
+    if (!isOwner) d.onclick = () => { enterRoom(room); closeSidebar(); };
     el.appendChild(d);
   });
 }
@@ -896,6 +938,14 @@ async function enterRoom(room) {
   await loadMessages(room._id);
   socket.emit('room:join', { roomId: room._id });
   if (!isMobile()) document.getElementById('msg-input').focus();
+
+  // Show exit button only if user is NOT the creator of the room
+  const exitBtn = document.getElementById('exit-room-btn');
+  if (room.createdBy && room.createdBy !== currentUser.username) {
+    exitBtn.style.display = 'flex';
+  } else {
+    exitBtn.style.display = 'none';
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1160,10 +1210,272 @@ document.getElementById('fp-newpw2').addEventListener('keydown',   e => e.key===
 
 // Init
 tryAutoLogin();
+
+
+// ══════════════════════════════════════════════════════════════════
+//  INVITE CODE SYSTEM
+// ══════════════════════════════════════════════════════════════════
+let inviteRoomId   = null;   // room whose invite code we're managing
+let joinPreviewData = null;  // preview data before confirming join
+
+// ── Format input as XXXX-XXXX ────────────────────────────────────
+function formatInviteInput(inp) {
+  let v = inp.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8);
+  inp.value = v.length > 4 ? v.slice(0,4) + '-' + v.slice(4) : v;
+  document.getElementById('join-preview').classList.remove('show');
+  document.getElementById('join-confirm-btn').style.display = 'none';
+  document.getElementById('join-preview-btn').style.display = 'block';
+  joinPreviewData = null;
+}
+
+// ── Open "Join with code" modal ───────────────────────────────────
+function openJoinCode() {
+  document.getElementById('join-code-input').value = '';
+  document.getElementById('join-err').style.display = 'none';
+  document.getElementById('join-preview').classList.remove('show');
+  document.getElementById('join-preview-btn').style.display = 'block';
+  document.getElementById('join-confirm-btn').style.display = 'none';
+  joinPreviewData = null;
+  document.getElementById('join-code-modal').classList.add('open');
+  setTimeout(() => document.getElementById('join-code-input').focus(), 50);
+  closeSidebar();
+}
+function closeJoinCode() {
+  document.getElementById('join-code-modal').classList.remove('open');
+}
+
+// ── Preview the channel before joining ───────────────────────────
+async function previewInvite() {
+  const raw  = document.getElementById('join-code-input').value;
+  const code = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const errEl = document.getElementById('join-err');
+  errEl.style.display = 'none';
+
+  if (code.length !== 8) { errEl.textContent = 'Code must be 8 characters'; errEl.style.display = 'block'; return; }
+
+  const r = await authFetch(`/api/invite/${code}`);
+  if (!r) return;
+  if (!r.ok) {
+    const d = await r.json();
+    errEl.textContent = d.error || 'Invalid or expired code';
+    errEl.style.display = 'block';
+    return;
+  }
+  const data = await r.json();
+  joinPreviewData = { code, ...data };
+
+  document.getElementById('join-preview-name').textContent = '#' + data.roomName;
+  document.getElementById('join-preview-desc').textContent = data.description || 'No description';
+  document.getElementById('join-preview-members').textContent = `${data.memberCount} member${data.memberCount !== 1 ? 's' : ''}`;
+  document.getElementById('join-preview').classList.add('show');
+  document.getElementById('join-preview-btn').style.display = 'none';
+  document.getElementById('join-confirm-btn').style.display = 'block';
+}
+
+// ── Confirm and join ──────────────────────────────────────────────
+async function confirmJoin() {
+  if (!joinPreviewData) return;
+  const btn  = document.getElementById('join-confirm-btn');
+  const errEl = document.getElementById('join-err');
+  btn.disabled = true; btn.textContent = 'Joining…';
+
+  const r = await authFetch('/api/invite/join', { method:'POST', body: JSON.stringify({ code: joinPreviewData.code }) });
+  btn.disabled = false; btn.textContent = '✓ Join Channel';
+  if (!r) return;
+  if (!r.ok) {
+    const d = await r.json();
+    errEl.textContent = d.error || 'Failed to join';
+    errEl.style.display = 'block';
+    return;
+  }
+  const { room } = await r.json();
+  closeJoinCode();
+
+  // If not already in rooms list, add it
+  if (!rooms.find(r2 => r2._id === room._id)) {
+    rooms.push(room);
+    renderRooms();
+  }
+  // Auto-enter the joined room
+  enterRoom(room);
+  toast(`Joined #${room.name}!`);
+}
+
+// ── Show invite code for a room the user created ──────────────────
+async function openInviteModal(roomId, roomName) {
+  inviteRoomId = roomId;
+  document.getElementById('invite-room-name-label').textContent = '#' + roomName;
+  document.getElementById('invite-code-display').textContent = 'Generating…';
+  document.getElementById('invite-modal').classList.add('open');
+
+  // Generate or retrieve existing code
+  const r = await authFetch(`/api/rooms/${roomId}/invite`, { method:'POST' });
+  if (!r?.ok) { document.getElementById('invite-code-display').textContent = 'Error'; return; }
+  const { inviteCode } = await r.json();
+  document.getElementById('invite-code-display').textContent =
+    inviteCode.slice(0,4) + '-' + inviteCode.slice(4);
+}
+function closeInviteModal() {
+  document.getElementById('invite-modal').classList.remove('open');
+  inviteRoomId = null;
+}
+
+async function regenerateInviteCode() {
+  if (!inviteRoomId) return;
+  document.getElementById('invite-code-display').textContent = 'Generating…';
+  const r = await authFetch(`/api/rooms/${inviteRoomId}/invite`, { method:'POST' });
+  if (!r?.ok) return;
+  const { inviteCode } = await r.json();
+  document.getElementById('invite-code-display').textContent =
+    inviteCode.slice(0,4) + '-' + inviteCode.slice(4);
+  document.getElementById('invite-copy-btn').textContent = 'Copy';
+  toast('New code generated');
+}
+
+async function revokeInviteCode() {
+  if (!inviteRoomId) return;
+  if (!confirm('Revoke this invite code? Anyone with the old code can no longer join.')) return;
+  const r = await authFetch(`/api/rooms/${inviteRoomId}/invite`, { method:'DELETE' });
+  if (r?.ok) { toast('Invite code revoked'); closeInviteModal(); }
+}
+
+function copyInviteCode() {
+  const code = document.getElementById('invite-code-display').textContent.replace('-','');
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.getElementById('invite-copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+
+// ── Toast helper (if not already defined) ─────────────────────────
+function toast(msg) {
+  // Simple toast — append a temp element
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1e2230;border:1px solid #272b38;border-radius:10px;padding:10px 18px;font-size:14px;color:#e8eaf0;z-index:300;transition:opacity .3s;pointer-events:none';
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),400); }, 2500);
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  EXIT CHANNEL
+// ══════════════════════════════════════════════════════════════════
+function promptExitRoom() {
+  if (!currentRoom) return;
+  // Don't show exit for rooms the user created (they'd need to delete instead)
+  if (currentRoom.createdBy === currentUser.username) {
+    alert('You created this channel. To remove it, use the Admin Panel or ask an admin to delete it.');
+    return;
+  }
+  document.getElementById('exit-room-label').textContent = '#' + currentRoom.name;
+  document.getElementById('exit-overlay').classList.add('open');
+}
+
+function closeExitPrompt() {
+  document.getElementById('exit-overlay').classList.remove('open');
+}
+
+async function confirmExitRoom() {
+  if (!currentRoom) return;
+  const room = currentRoom;
+  closeExitPrompt();
+
+  // Tell server to remove from members
+  const r = await authFetch(`/api/rooms/${room._id}/exit`, { method: 'POST' });
+  if (!r) return;
+
+  if (!r.ok) {
+    const d = await r.json();
+    alert(d.error || 'Could not leave channel');
+    return;
+  }
+
+  // Tell socket server we're disconnecting from this room
+  socket.emit('room:leave', { roomId: room._id });
+
+  // Remove from local rooms list
+  rooms = rooms.filter(r2 => r2._id !== room._id);
+  renderRooms();
+
+  // Reset chat area to empty state
+  currentRoom = null;
+  document.getElementById('messages-area').style.display   = 'none';
+  document.getElementById('messages-area').innerHTML       = '';
+  document.getElementById('input-area').style.display      = 'none';
+  document.getElementById('chat-header').style.display     = 'none';
+  document.getElementById('exit-room-btn').style.display   = 'none';
+  document.getElementById('empty-state').style.display     = 'flex';
+  if (isMobile()) {
+    document.getElementById('empty-header').style.display  = 'flex';
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('nav-channels').classList.add('active');
+  }
+
+  toast(`Left #${room.name}`);
+}
+
 </script>
 <div class="media-overlay" id="media-overlay" onclick="closeMedia()">
   <button class="media-close" onclick="closeMedia()">✕</button>
   <div id="media-content"></div>
 </div>
+
+<!-- Join with invite code modal -->
+<div class="modal-bg" id="join-code-modal">
+  <div class="modal">
+    <h2>🔑 Join with invite code</h2>
+    <div class="auth-error" id="join-err" style="display:none;background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--danger);margin-bottom:14px"></div>
+    <div class="field">
+      <label>Enter 8-character code</label>
+      <input type="text" id="join-code-input" class="otp-input" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" enterkeyhint="go"
+        oninput="formatInviteInput(this)" onkeydown="if(event.key==='Enter')previewInvite()"/>
+    </div>
+    <div class="invite-preview" id="join-preview">
+      <div class="invite-preview-name" id="join-preview-name"></div>
+      <div class="invite-preview-desc" id="join-preview-desc"></div>
+      <div class="invite-preview-members" id="join-preview-members"></div>
+    </div>
+    <button class="join-btn-big" id="join-preview-btn" onclick="previewInvite()">Preview Channel →</button>
+    <button class="join-btn-big" id="join-confirm-btn" onclick="confirmJoin()" style="display:none">✓ Join Channel</button>
+    <div class="modal-actions" style="margin-top:10px">
+      <button class="btn-secondary" onclick="closeJoinCode()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generate invite code modal -->
+<div class="modal-bg" id="invite-modal">
+  <div class="modal">
+    <h2>🔗 Channel invite code</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Share this code with anyone you want to invite. They can join via "Join with code" in the sidebar.</p>
+    <div class="invite-code-box">
+      <div class="invite-code-val" id="invite-code-display">--------</div>
+      <button class="invite-copy-btn" id="invite-copy-btn" onclick="copyInviteCode()">Copy</button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">Code for: <strong id="invite-room-name-label">—</strong></p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="revokeInviteCode()" style="border-color:rgba(255,107,107,.3);color:var(--danger)">Revoke code</button>
+      <button class="btn-primary" style="flex:1;margin-top:0;padding:12px" onclick="regenerateInviteCode()">↻ New code</button>
+      <button class="btn-secondary" onclick="closeInviteModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Exit channel confirmation -->
+<div class="exit-confirm-overlay" id="exit-overlay">
+  <div class="exit-confirm-card">
+    <div class="exit-confirm-icon">🚪</div>
+    <div class="exit-confirm-title">Leave <span id="exit-room-label">#channel</span>?</div>
+    <div class="exit-confirm-sub">You'll be removed from this channel. You can rejoin later with an invite code if the channel has one.</div>
+    <div class="exit-confirm-actions">
+      <button class="exit-cancel-btn" onclick="closeExitPrompt()">Cancel</button>
+      <button class="exit-go-btn" onclick="confirmExitRoom()">Leave channel</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

@@ -285,6 +285,160 @@ app.delete('/api/rooms/:id', requireAdmin, async (req, res) => {
   } catch(err) { res.status(500).json({ error:err.message }); }
 });
 
+
+
+// ══════════════════════════════════════════════════════════════════
+//  EXIT CHANNEL  (remove user from members list permanently)
+// ══════════════════════════════════════════════════════════════════
+app.post('/api/rooms/:id/exit', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const username = req.user.username;
+
+    if (global.DEMO_MODE) {
+      const room = demoRooms[id];
+      if (!room) return res.status(404).json({ error: 'Room not found' });
+      // Creator cannot exit their own room — must delete it instead
+      if (room.createdBy === username)
+        return res.status(400).json({ error: 'You created this channel. Delete it instead of leaving.' });
+      room.members = (room.members || []).filter(m => m !== username);
+      roomCache.del('rooms:all');
+      roomCache.del(`room:${id}`);
+      return res.json({ message: `Left #${room.name}` });
+    }
+
+    const room = await Room.findById(id);
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    if (room.createdBy === username)
+      return res.status(400).json({ error: 'You created this channel. Delete it instead of leaving.' });
+
+    room.members = room.members.filter(m => m !== username);
+    await room.save();
+    roomCache.del('rooms:all');
+    roomCache.del(`room:${id}`);
+    res.json({ message: `Left #${room.name}` });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════
+//  INVITE CODE SYSTEM
+// ══════════════════════════════════════════════════════════════════
+
+// ── Generate / regenerate invite code for a room ─────────────────
+// Only room creator or admin can generate codes
+app.post('/api/rooms/:id/invite', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (global.DEMO_MODE) {
+      const room = demoRooms[id];
+      if (!room) return res.status(404).json({ error: 'Room not found' });
+      if (room.createdBy !== req.user.username && req.user.role !== 'admin')
+        return res.status(403).json({ error: 'Only the room creator or admin can generate invite codes' });
+      // generate 8-char code
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+      room.inviteCode    = code;
+      room.inviteEnabled = true;
+      room.inviteUsedBy  = room.inviteUsedBy || [];
+      roomCache.del('rooms:all'); roomCache.del(`room:${id}`);
+      return res.json({ inviteCode: code, roomName: room.name });
+    }
+
+    const room = await Room.findById(id);
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    if (room.createdBy !== req.user.username && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Only the room creator or admin can generate invite codes' });
+
+    room.generateInviteCode();
+    await room.save();
+    roomCache.del('rooms:all'); roomCache.del(`room:${id}`);
+    res.json({ inviteCode: room.inviteCode, roomName: room.name });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Disable invite code ───────────────────────────────────────────
+app.delete('/api/rooms/:id/invite', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (global.DEMO_MODE) {
+      const room = demoRooms[id];
+      if (!room) return res.status(404).json({ error: 'Room not found' });
+      if (room.createdBy !== req.user.username && req.user.role !== 'admin')
+        return res.status(403).json({ error: 'Not authorized' });
+      room.inviteCode = null; room.inviteEnabled = false;
+      roomCache.del('rooms:all'); roomCache.del(`room:${id}`);
+      return res.json({ message: 'Invite code disabled' });
+    }
+
+    const room = await Room.findById(id);
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    if (room.createdBy !== req.user.username && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Not authorized' });
+    room.disableInvite(); await room.save();
+    roomCache.del('rooms:all'); roomCache.del(`room:${id}`);
+    res.json({ message: 'Invite code disabled' });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Join a room via invite code ───────────────────────────────────
+// Public endpoint - just needs auth, not room membership
+app.post('/api/invite/join', requireAuth, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Invite code is required' });
+    const normalised = code.trim().toUpperCase();
+
+    if (global.DEMO_MODE) {
+      const room = Object.values(demoRooms).find(r => r.inviteCode === normalised && r.inviteEnabled);
+      if (!room) return res.status(404).json({ error: 'Invalid or expired invite code' });
+      if (!room.members) room.members = [];
+      if (!room.inviteUsedBy) room.inviteUsedBy = [];
+      if (!room.members.includes(req.user.username)) room.members.push(req.user.username);
+      if (!room.inviteUsedBy.includes(req.user.username)) room.inviteUsedBy.push(req.user.username);
+      roomCache.del('rooms:all'); roomCache.del(`room:${room._id}`);
+      // emit new room to joiner
+      io.emit('room:new', room);
+      return res.json({ room, message: `Joined #${room.name}` });
+    }
+
+    const room = await Room.findOne({ inviteCode: normalised, inviteEnabled: true });
+    if (!room) return res.status(404).json({ error: 'Invalid or expired invite code' });
+
+    // Add to members if not already in
+    if (!room.members.includes(req.user.username)) {
+      room.members.push(req.user.username);
+    }
+    if (!room.inviteUsedBy) room.inviteUsedBy = [];
+    if (!room.inviteUsedBy.includes(req.user.username)) {
+      room.inviteUsedBy.push(req.user.username);
+    }
+    await room.save();
+    roomCache.del('rooms:all'); roomCache.del(`room:${room._id}`);
+    io.emit('room:new', room);
+    res.json({ room, message: `Joined #${room.name}` });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Get invite code info (preview before joining) ─────────────────
+app.get('/api/invite/:code', requireAuth, async (req, res) => {
+  try {
+    const code = req.params.code.trim().toUpperCase();
+
+    if (global.DEMO_MODE) {
+      const room = Object.values(demoRooms).find(r => r.inviteCode === code && r.inviteEnabled);
+      if (!room) return res.status(404).json({ error: 'Invalid or expired invite code' });
+      return res.json({ roomName: room.name, description: room.description, memberCount: (room.members||[]).length });
+    }
+
+    const room = await Room.findOne({ inviteCode: code, inviteEnabled: true });
+    if (!room) return res.status(404).json({ error: 'Invalid or expired invite code' });
+    res.json({ roomName: room.name, description: room.description, memberCount: room.members.length });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 // ══════════════════════════════════════════════════════════════════
 //  MESSAGES
 // ══════════════════════════════════════════════════════════════════
