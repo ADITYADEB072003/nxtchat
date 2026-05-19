@@ -248,30 +248,86 @@ app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => 
 // ══════════════════════════════════════════════════════════════════
 app.get('/api/rooms', requireAuth, async (req, res) => {
   try {
-    const cached = roomCache.get('rooms:all');
-    if (cached) return res.json({ rooms:cached, source:'cache' });
-    if (global.DEMO_MODE) { const rooms=Object.values(demoRooms); roomCache.set('rooms:all',rooms,60); return res.json({ rooms, source:'demo' }); }
-    const rooms = await Room.find().sort({ createdAt:1 });
-    roomCache.set('rooms:all', rooms, 60);
-    res.json({ rooms, source:'db' });
-  } catch(err) { res.status(500).json({ error:err.message }); }
+    const username = req.user.username;
+    const isAdmin  = req.user.role === 'admin';
+    // Cache key is per-user so private rooms don't bleed across users
+    const cacheKey = `rooms:user:${username}`;
+    const cached   = roomCache.get(cacheKey);
+    if (cached) return res.json({ rooms: cached, source: 'cache' });
+
+    let rooms;
+    if (global.DEMO_MODE) {
+      const all = Object.values(demoRooms);
+      rooms = isAdmin
+        ? all
+        : all.filter(r => !r.isPrivate || r.createdBy === username || (r.members||[]).includes(username));
+    } else {
+      if (isAdmin) {
+        rooms = await Room.find().sort({ createdAt: 1 }).lean();
+      } else {
+        rooms = await Room.find({
+          $or: [
+            { isPrivate: false },                      // public — visible to all
+            { createdBy: username },                   // rooms they created
+            { members: username },                     // rooms they joined via invite
+          ]
+        }).sort({ createdAt: 1 }).lean();
+      }
+    }
+
+    roomCache.set(cacheKey, rooms, 60);
+    res.json({ rooms, source: 'db' });
+  } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/rooms', requireAuth, async (req, res) => {
   try {
-    const { name, description } = req.body;
-    if (!name) return res.status(400).json({ error:'name required' });
+    const { name, description, isPrivate } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const username  = req.user.username;
+    const _private  = !!isPrivate;
+
     let room;
     if (global.DEMO_MODE) {
-      room = { _id:uuidv4(), name, description:description||'', createdBy:req.user.username, members:[], createdAt:new Date() };
-      demoRooms[room._id] = room; demoMessages[room._id] = [];
+      room = {
+        _id: uuidv4(), name, description: description||'',
+        createdBy: username,
+        // creator is always a member so they can see their own room
+        members: [username],
+        isPrivate: _private,
+        createdAt: new Date(),
+        inviteCode: null, inviteEnabled: false, inviteUsedBy: [],
+      };
+      demoRooms[room._id]    = room;
+      demoMessages[room._id] = [];
     } else {
-      room = await Room.create({ name, description, createdBy:req.user.username, members:[] });
+      room = await Room.create({
+        name, description, createdBy: username,
+        members: [username],   // creator is always a member
+        isPrivate: _private,
+      });
+      room = room.toObject();
     }
-    roomCache.del('rooms:all'); roomCache.set(`room:${room._id}`,room,300);
-    io.emit('room:new', room);
+
+    // Bust per-user cache for creator
+    roomCache.del(`rooms:user:${username}`);
+    roomCache.set(`room:${room._id}`, room, 300);
+
+    if (_private) {
+      // Private room — only emit to creator (not broadcast to everyone)
+      const creatorSocket = [...io.sockets.sockets.values()]
+        .find(s => s.user?.username === username);
+      if (creatorSocket) creatorSocket.emit('room:new', room);
+    } else {
+      // Public room — everyone should see it, invalidate all user caches
+      for (const [key] of roomCache.store) {
+        if (key.startsWith('rooms:user:')) roomCache.del(key);
+      }
+      io.emit('room:new', room);
+    }
+
     res.status(201).json(room);
-  } catch(err) { res.status(400).json({ error:err.message }); }
+  } catch(err) { res.status(400).json({ error: err.message }); }
 });
 
 app.delete('/api/rooms/:id', requireAdmin, async (req, res) => {
@@ -279,7 +335,11 @@ app.delete('/api/rooms/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     if (global.DEMO_MODE) { delete demoRooms[id]; delete demoMessages[id]; }
     else { await Room.findByIdAndDelete(id); await Message.deleteMany({ roomId:id }); }
-    roomCache.del('rooms:all'); roomCache.del(`room:${id}`); messageCache.delByPrefix(`messages:${id}:`);
+    // bust every user's cached room list
+    for (const [key] of roomCache.store) {
+      if (key.startsWith('rooms:user:')) roomCache.del(key);
+    }
+    roomCache.del(`room:${id}`); messageCache.delByPrefix(`messages:${id}:`);
     io.emit('room:deleted', { roomId:id });
     res.json({ message:'Room deleted' });
   } catch(err) { res.status(500).json({ error:err.message }); }
@@ -302,7 +362,7 @@ app.post('/api/rooms/:id/exit', requireAuth, async (req, res) => {
       if (room.createdBy === username)
         return res.status(400).json({ error: 'You created this channel. Delete it instead of leaving.' });
       room.members = (room.members || []).filter(m => m !== username);
-      roomCache.del('rooms:all');
+      roomCache.del(`rooms:user:${username}`);
       roomCache.del(`room:${id}`);
       return res.json({ message: `Left #${room.name}` });
     }
@@ -314,7 +374,7 @@ app.post('/api/rooms/:id/exit', requireAuth, async (req, res) => {
 
     room.members = room.members.filter(m => m !== username);
     await room.save();
-    roomCache.del('rooms:all');
+    roomCache.del(`rooms:user:${username}`);
     roomCache.del(`room:${id}`);
     res.json({ message: `Left #${room.name}` });
   } catch(err) { res.status(500).json({ error: err.message }); }
@@ -342,7 +402,8 @@ app.post('/api/rooms/:id/invite', requireAuth, async (req, res) => {
       room.inviteCode    = code;
       room.inviteEnabled = true;
       room.inviteUsedBy  = room.inviteUsedBy || [];
-      roomCache.del('rooms:all'); roomCache.del(`room:${id}`);
+      roomCache.del(`rooms:user:${req.user.username}`);
+      roomCache.del(`room:${id}`);
       return res.json({ inviteCode: code, roomName: room.name });
     }
 
@@ -353,7 +414,8 @@ app.post('/api/rooms/:id/invite', requireAuth, async (req, res) => {
 
     room.generateInviteCode();
     await room.save();
-    roomCache.del('rooms:all'); roomCache.del(`room:${id}`);
+    roomCache.del(`rooms:user:${req.user.username}`);
+    roomCache.del(`room:${id}`);
     res.json({ inviteCode: room.inviteCode, roomName: room.name });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
@@ -398,9 +460,12 @@ app.post('/api/invite/join', requireAuth, async (req, res) => {
       if (!room.inviteUsedBy) room.inviteUsedBy = [];
       if (!room.members.includes(req.user.username)) room.members.push(req.user.username);
       if (!room.inviteUsedBy.includes(req.user.username)) room.inviteUsedBy.push(req.user.username);
-      roomCache.del('rooms:all'); roomCache.del(`room:${room._id}`);
-      // emit new room to joiner
-      io.emit('room:new', room);
+      roomCache.del(`rooms:user:${req.user.username}`);
+      roomCache.del(`room:${room._id}`);
+      // emit only to the joiner's socket
+      const joinerSocket = [...io.sockets.sockets.values()]
+        .find(s => s.user?.username === req.user.username);
+      if (joinerSocket) joinerSocket.emit('room:new', room);
       return res.json({ room, message: `Joined #${room.name}` });
     }
 
@@ -416,8 +481,12 @@ app.post('/api/invite/join', requireAuth, async (req, res) => {
       room.inviteUsedBy.push(req.user.username);
     }
     await room.save();
-    roomCache.del('rooms:all'); roomCache.del(`room:${room._id}`);
-    io.emit('room:new', room);
+    roomCache.del(`rooms:user:${req.user.username}`);
+    roomCache.del(`room:${room._id}`);
+    // emit only to the joiner's socket
+    const joinerSocket = [...io.sockets.sockets.values()]
+      .find(s => s.user?.username === req.user.username);
+    if (joinerSocket) joinerSocket.emit('room:new', room.toObject ? room.toObject() : room);
     res.json({ room, message: `Joined #${room.name}` });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });

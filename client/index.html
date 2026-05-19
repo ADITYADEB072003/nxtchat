@@ -264,6 +264,13 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); disp
 .media-close{position:fixed;top:20px;right:24px;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:24px;cursor:pointer;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center}
 .admin-link{display:flex;align-items:center;gap:6px;padding:8px 12px;margin:4px 8px;background:rgba(124,106,247,.08);border:1px solid rgba(124,106,247,.2);border-radius:8px;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none}
 .admin-link:hover{background:rgba(124,106,247,.15)}
+.privacy-toggle{display:flex;gap:8px;margin-bottom:14px}
+.privacy-opt{flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-align:center;-webkit-tap-highlight-color:transparent}
+.privacy-opt.selected{background:rgba(124,106,247,.12);border-color:var(--accent);color:var(--accent)}
+.privacy-opt.selected-private{background:rgba(255,107,107,.08);border-color:var(--danger);color:var(--danger)}
+.privacy-hint{font-size:12px;color:var(--muted);margin-bottom:14px;padding:8px 12px;background:var(--surface2);border-radius:8px;line-height:1.5}
+.room-lock{font-size:11px;margin-left:4px;opacity:.7}
+
 .exit-room-btn{width:36px;height:36px;border-radius:8px;border:1px solid rgba(255,107,107,.25);background:transparent;color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s;-webkit-tap-highlight-color:transparent;flex-shrink:0}
 .exit-room-btn:hover{background:rgba(255,107,107,.1);border-color:var(--danger)}
 .exit-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:none;align-items:center;justify-content:center;padding:24px}
@@ -632,6 +639,11 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); disp
 <div class="modal-bg" id="new-room-modal">
   <div class="modal">
     <h2>Create a channel</h2>
+    <div class="privacy-toggle">
+      <button class="privacy-opt selected" id="opt-public" onclick="setPrivacy(false)">🌐 Public</button>
+      <button class="privacy-opt" id="opt-private" onclick="setPrivacy(true)">🔒 Private</button>
+    </div>
+    <div class="privacy-hint" id="privacy-hint">Visible to everyone. Anyone can join.</div>
     <input type="text" id="new-room-name" placeholder="Channel name (e.g. design)" enterkeyhint="next"/>
     <input type="text" id="new-room-desc" placeholder="Description (optional)" enterkeyhint="done"/>
     <div class="modal-actions">
@@ -910,7 +922,7 @@ function renderRooms() {
     d.className = 'room-item' + (sameRoom(room._id) ? ' active' : '');
     const isOwner = currentUser && (room.createdBy === currentUser.username || currentUser.role === 'admin');
     d.innerHTML = `
-      <span class="hash">#</span>
+      <span class="hash">${room.isPrivate ? '🔒' : '#'}</span>
       <span class="room-name">${room.name}</span>
       ${isOwner ? `<button class="room-invite-btn" title="Get invite code" onclick="event.stopPropagation();openInviteModal('${room._id}','${room.name}')">🔗</button>` : ''}
     `;
@@ -928,7 +940,7 @@ async function enterRoom(room) {
   document.getElementById('messages-area').style.display = 'flex';
   document.getElementById('input-area').style.display = 'block';
   document.getElementById('chat-header').style.display = 'flex';
-  document.getElementById('header-room-name').textContent = '#' + room.name;
+  document.getElementById('header-room-name').textContent = (room.isPrivate ? '🔒' : '#') + room.name;
   document.getElementById('header-room-desc').textContent = room.description || '';
   if (isMobile()) {
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -1130,22 +1142,59 @@ function insertEmoji(e) { const inp = document.getElementById('msg-input'); inp.
 // ══════════════════════════════════════════════════════
 //  New Room
 // ══════════════════════════════════════════════════════
+
+function closeNewRoom() { document.getElementById('new-room-modal').classList.remove('open'); }
+
+let _roomIsPrivate = false;
+
+function setPrivacy(isPrivate) {
+  _roomIsPrivate = isPrivate;
+  document.getElementById('opt-public').classList.toggle('selected', !isPrivate);
+  document.getElementById('opt-public').classList.remove('selected-private');
+  document.getElementById('opt-private').classList.toggle('selected', isPrivate);
+  document.getElementById('opt-private').classList.toggle('selected-private', isPrivate);
+  document.getElementById('privacy-hint').textContent = isPrivate
+    ? '🔒 Only visible to invited members. Share an invite code to add people.'
+    : '🌐 Visible to everyone. Anyone can join from the sidebar.';
+}
+
 function openNewRoom() {
-  closeSidebar();
+  _roomIsPrivate = false;
+  setPrivacy(false);
+  document.getElementById('new-room-name').value = '';
+  document.getElementById('new-room-desc').value = '';
   document.getElementById('new-room-modal').classList.add('open');
+  closeSidebar();
   setTimeout(() => document.getElementById('new-room-name').focus(), 50);
 }
-function closeNewRoom() { document.getElementById('new-room-modal').classList.remove('open'); }
 
 async function createRoom() {
   const name = document.getElementById('new-room-name').value.trim().toLowerCase().replace(/\s+/g,'-');
   const description = document.getElementById('new-room-desc').value.trim();
   if (!name) return;
-  const r = await authFetch('/api/rooms', { method:'POST', body: JSON.stringify({ name, description }) });
+  const r = await authFetch('/api/rooms', {
+    method: 'POST',
+    body: JSON.stringify({ name, description, isPrivate: _roomIsPrivate })
+  });
   if (r?.ok) {
+    const room = await r.json();
     document.getElementById('new-room-name').value = '';
     document.getElementById('new-room-desc').value = '';
-    closeNewRoom(); await loadRooms();
+    closeNewRoom();
+    // Add room to local list immediately (don't reload — private rooms
+    // won't come via io.emit('room:new') to other users)
+    if (!rooms.find(r2 => r2._id === room._id)) {
+      rooms.push(room);
+      renderRooms();
+    }
+    // Auto-enter and if private, show invite code right away
+    enterRoom(room);
+    if (room.isPrivate) {
+      setTimeout(() => openInviteModal(room._id, room.name), 600);
+    }
+  } else if (r) {
+    const d = await r.json();
+    alert(d.error || 'Could not create channel');
   }
 }
 
