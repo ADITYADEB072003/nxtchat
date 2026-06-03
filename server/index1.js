@@ -12,18 +12,12 @@ const { Room, Media, Message, User } = require('./models');
 const { messageCache, roomCache, userCache, presenceCache } = require('./cache');
 const { signToken, requireAuth, socketAuth, generateOtp, sendOtpEmail } = require('./auth');
 const { upload, generateThumbnail, ALLOWED_IMAGES } = require('./upload');
-const {
-  strictLimiter, otpLimiter, uploadLimiter, adminLimiter,
-  inviteLimiter, apiLimiter, checkSocketRate, cleanSocketRate, logLimits,
-} = require('./limiter');
 
 const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(cors());
-app.set('trust proxy', 1); // trust first proxy (Render / nginx)
-app.use('/api/', apiLimiter); // global ceiling — all /api/* routes
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, '../client')));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -94,7 +88,7 @@ app.get('/api/health', (req, res) => res.json({ status:'ok', uptime:process.upti
 // ══════════════════════════════════════════════════════════════════
 //  AUTH
 // ══════════════════════════════════════════════════════════════════
-app.post('/api/auth/register', strictLimiter, async (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!username||!email||!password) return res.status(400).json({ error:'All fields required' });
@@ -120,7 +114,7 @@ app.post('/api/auth/register', strictLimiter, async (req, res) => {
   } catch(err) { res.status(400).json({ error:err.message }); }
 });
 
-app.post('/api/auth/login', strictLimiter, async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username||!password) return res.status(400).json({ error:'Credentials required' });
@@ -157,7 +151,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   } catch(err) { res.status(500).json({ error:err.message }); }
 });
 
-app.post('/api/auth/forgot-password', strictLimiter, async (req, res) => {
+app.post('/api/auth/forgot-password', async (req, res) => {
   const OK = { message:'If that email is registered, a reset code has been sent.' };
   try {
     const { email } = req.body;
@@ -173,7 +167,7 @@ app.post('/api/auth/forgot-password', strictLimiter, async (req, res) => {
   } catch(err) { res.status(500).json({ error:err.message }); }
 });
 
-app.post('/api/auth/verify-otp', otpLimiter, async (req, res) => {
+app.post('/api/auth/verify-otp', async (req, res) => {
   try {
     const { email, otp } = req.body;
     if (global.DEMO_MODE) {
@@ -189,7 +183,7 @@ app.post('/api/auth/verify-otp', otpLimiter, async (req, res) => {
   } catch(err) { res.status(500).json({ error:err.message }); }
 });
 
-app.post('/api/auth/reset-password', otpLimiter, async (req, res) => {
+app.post('/api/auth/reset-password', async (req, res) => {
   try {
     const { resetToken, newPassword } = req.body;
     if (!resetToken||!newPassword) return res.status(400).json({ error:'resetToken and newPassword required' });
@@ -215,7 +209,7 @@ app.post('/api/auth/reset-password', otpLimiter, async (req, res) => {
 // ══════════════════════════════════════════════════════════════════
 //  FILE UPLOAD  (images + videos — stored locally, no external CDN)
 // ══════════════════════════════════════════════════════════════════
-app.post('/api/upload', requireAuth, uploadLimiter, upload.single('file'), async (req, res) => {
+app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error:'No file provided' });
     const isImage = ALLOWED_IMAGES.includes(req.file.mimetype);
@@ -336,7 +330,7 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
   } catch(err) { res.status(400).json({ error: err.message }); }
 });
 
-app.delete('/api/rooms/:id', requireAdmin, adminLimiter, async (req, res) => {
+app.delete('/api/rooms/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     if (global.DEMO_MODE) { delete demoRooms[id]; delete demoMessages[id]; }
@@ -453,7 +447,7 @@ app.delete('/api/rooms/:id/invite', requireAuth, async (req, res) => {
 
 // ── Join a room via invite code ───────────────────────────────────
 // Public endpoint - just needs auth, not room membership
-app.post('/api/invite/join', requireAuth, inviteLimiter, async (req, res) => {
+app.post('/api/invite/join', requireAuth, async (req, res) => {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Invite code is required' });
@@ -498,7 +492,7 @@ app.post('/api/invite/join', requireAuth, inviteLimiter, async (req, res) => {
 });
 
 // ── Get invite code info (preview before joining) ─────────────────
-app.get('/api/invite/:code', requireAuth, inviteLimiter, async (req, res) => {
+app.get('/api/invite/:code', requireAuth, async (req, res) => {
   try {
     const code = req.params.code.trim().toUpperCase();
 
@@ -532,7 +526,7 @@ app.get('/api/rooms/:roomId/messages', requireAuth, async (req, res) => {
   } catch(err) { res.status(500).json({ error:err.message }); }
 });
 
-app.delete('/api/messages/:id', requireAdmin, adminLimiter, async (req, res) => {
+app.delete('/api/messages/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     let roomId;
@@ -567,7 +561,7 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
 });
 
 // ── Ban / unban user ──────────────────────────────────────────────
-app.patch('/api/admin/users/:username/ban', requireAdmin, adminLimiter, async (req, res) => {
+app.patch('/api/admin/users/:username/ban', requireAdmin, async (req, res) => {
   try {
     const { username } = req.params;
     const { banned, reason } = req.body;
@@ -588,7 +582,7 @@ app.patch('/api/admin/users/:username/ban', requireAdmin, adminLimiter, async (r
 });
 
 // ── Promote / demote ──────────────────────────────────────────────
-app.patch('/api/admin/users/:username/role', requireAdmin, adminLimiter, async (req, res) => {
+app.patch('/api/admin/users/:username/role', requireAdmin, async (req, res) => {
   try {
     const { username } = req.params;
     const { role } = req.body;
@@ -609,7 +603,7 @@ app.patch('/api/admin/users/:username/role', requireAdmin, adminLimiter, async (
 });
 
 // ── Delete user ───────────────────────────────────────────────────
-app.delete('/api/admin/users/:username', requireAdmin, adminLimiter, async (req, res) => {
+app.delete('/api/admin/users/:username', requireAdmin, async (req, res) => {
   try {
     const { username } = req.params;
     if (username === req.user.username) return res.status(400).json({ error:"Can't delete yourself" });
@@ -654,7 +648,7 @@ app.get('/api/admin/rooms', requireAdmin, async (req, res) => {
 });
 
 // ── Broadcast system message ──────────────────────────────────────
-app.post('/api/admin/broadcast', requireAdmin, adminLimiter, async (req, res) => {
+app.post('/api/admin/broadcast', requireAdmin, async (req, res) => {
   try {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error:'message required' });
@@ -698,7 +692,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('message:send', async ({ roomId, text, mediaId, mediaUrl, thumbUrl, fileName, fileSize, type: msgType }) => {
-    if (!checkSocketRate(socket)) return; // rate limited
     if (!text?.trim() && !mediaId) return;
     try {
       const type = msgType || 'text';
@@ -732,7 +725,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    cleanSocketRate(socket.id); // free memory
     const { roomId } = socket.data;
     presenceCache.del(`online:${username}`);
     if (roomId) {
@@ -754,7 +746,4 @@ function getOnlineUsers(roomId) {
 //  START
 // ══════════════════════════════════════════════════════════════════
 const PORT = process.env.PORT || 3000;
-connectDB().then(() => {
-  logLimits();
-  server.listen(PORT, () => console.log(`🚀 http://localhost:${PORT}   admin: http://localhost:${PORT}/admin`));
-});
+connectDB().then(() => server.listen(PORT, () => console.log(`🚀 http://localhost:${PORT}   admin: http://localhost:${PORT}/admin`)));
